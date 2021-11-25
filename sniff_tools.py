@@ -13,6 +13,7 @@ import numpy as np
 import h5py
 from scipy.signal import savgol_filter
 from scipy.ndimage import gaussian_filter1d
+import copy
 
 #%% Functions for behavioral (sniffing) data
 
@@ -95,7 +96,33 @@ def ins_sniff(sniff_ons, bsln_start, odor_start, sigma, sr = 60):
             sniff_delta[tr, :, m] = sniff_gauss[tr, :, m] - bsl
      
     return sniff_gauss, sniff_delta
+
+
+def select_trials_nov(sniffs, fam_min, fam_max, nov_min, nov_max):
+    tr_cat = [] # store trial category (fam, novel, blank) in 1 matrix separately for each mouse
     
+    nses = len(sniffs)
+    for mouse in range(nses):
+        trm = np.vstack([sniffs[mouse]['trial_familiarity'], sniffs[mouse]['trial_novelty'], sniffs[mouse]['trial_blank']]).T
+        tr_cat.append(trm)
+        
+    ncat = tr_cat[mouse].shape[1] 
+    tr_incl = copy.deepcopy(tr_cat) # copy category matrix to impose additional criteria
+    
+    # Now from the odor category matrix exclude some trials based on presentation no.
+    for m in range(nses):
+        for cat in range(ncat):
+            if cat < 1: # for familiar odorants (1 first column of odor_cat_m), exclude preblock trials
+                valid_trials = np.logical_and(sniffs[m]['trial_occur']>=fam_min, sniffs[m]['trial_occur']<=fam_max)
+                valid_trials = np.logical_and(valid_trials, tr_incl[m][:,cat])
+            else:
+                valid_trials = np.logical_and(tr_incl[m][:,cat], sniffs[m]['trial_occur']>=nov_min)
+                valid_trials = np.logical_and(tr_incl[m][:,cat], sniffs[m]['trial_occur']<=nov_max)
+            
+            tr_incl[m][:, cat] = valid_trials[:]*1
+            
+    return tr_cat, tr_incl
+
 
 #%% Functions for face camera (pupil) data
 

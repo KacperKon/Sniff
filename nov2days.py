@@ -4,30 +4,24 @@ Created on Thu Nov  4 10:07:17 2021
 
 @author: kkondrakiewicz
 """
-
 import numpy as np
-from scipy.ndimage import gaussian_filter1d
 import matplotlib.pyplot as plt
 import copy
 import sys
-import h5py
-import glob
 sys.path.append(r'C:\Users\kkondrakiewicz\Documents\Python Scripts\Sniff')
 import sniff_tools as st
-from scipy.signal import savgol_filter
 
 #%% Specify paths and some global analysis parameteres
 data_path = r'C:\Users\kkondrakiewicz\Desktop\PSAM_SC\data_all'
 expect_files = 3 # how many files per mice you expect
 nframes = 662 # how many camera frames per trial you expect
 pup_nframes = 373 # the same for pupil camera
-pup_sr = 31
+pup_sr = pup_nframes/12
 sigma = 0.25
 binsize = 2 # for binned analysis, bin size in seconds
 odor_start = 4
 odor_end = 6
-bsln_start = 2
-tvec = np.arange(-4, 7.03, 1/60)
+bsln_start = 1
 ndays = 2
 sniff_the_bin = [5, 7] # concentrate on this part - from 1 sec to 3 sec after odor presentation
 pup_bin = [6, 8] # this can be different for pupil, which has slower dynamics
@@ -41,7 +35,6 @@ nmice = int(nses/ndays)
 ntrials = sniffs[0]['trial_idx'].size
 npres = max(sniffs[0]['trial_occur'])
 sr = sniffs[0]['samp_freq']
-#bin_edges = np.arange(0, nframes, binsize*sr)
 
 #%% Import pupil dilation data and parse it into trials
 pup_raw, pup_ts = st.import_pupil(data_path)
@@ -54,41 +47,19 @@ pup_mybin = np.zeros([ntrials, nses])
 for m in range(nses):
     for tr in range(ntrials):
         tmp_data = pup_m[tr, :, m]
-        bsl = np.nanmean(tmp_data[bsln_start*pup_sr : odor_start*pup_sr])
+        bsl = np.nanmean(tmp_data[int(bsln_start*pup_sr) : int(odor_start*pup_sr)])
         pup_delta[tr, 0:tmp_data.size, m] = (tmp_data - bsl)
         
-        pup_mybin[tr, m] = np.nanmean(pup_delta[tr, pup_bin[0]*pup_sr:pup_bin[1]*pup_sr, m])
-
+        pup_mybin[tr, m] = np.nanmean(pup_delta[tr, int(pup_bin[0]*pup_sr):int(pup_bin[1]*pup_sr), m])
 
 #%% Restructure sniffing data into 3-dim array: trials x time point x miceand calculate breathing rate (multiple methods)
 sniff_ons, sniff_list, sniff_bins, sniff_delbins, sniff_mybin = st.bin_sniff(sniffs, nframes, bsln_start, odor_start, sniff_the_bin, binsize)
 sniff_gauss, sniff_delta = st.ins_sniff(sniff_ons, bsln_start, odor_start, sigma, sr)
 
-#%% Create odor category matrix, indicating for each trial which odor type is it
-# Each column corresponds to one category (key) from the 'odor_cat' dictionary
-
-tr_cat = [] # store trial category (fam, novel, blank) in 1 matrix separately for each mouse
-
-for mouse in range(nses):
-    trm = np.vstack([sniffs[mouse]['trial_familiarity'], sniffs[mouse]['trial_novelty'], sniffs[mouse]['trial_blank']]).T
-    tr_cat.append(trm)
-    
-ncat = tr_cat[m].shape[1] 
-tr_incl = copy.deepcopy(tr_cat) # copy category matrix to impose additional criteria
-
-# Now from the odor category matrix exclude some trials based on presentation no.
-for m in range(nses):
-    for cat in range(ncat):
-        if cat < 1: # for familiar odorants (1 first catumns of odor_cat_m), exclude preblock trials
-            valid_trials = np.logical_and(sniffs[m]['trial_occur']>=5, sniffs[m]['trial_occur']<=6)
-            valid_trials = np.logical_and(valid_trials, tr_incl[m][:,cat])
-        else:
-            valid_trials = np.logical_and(tr_incl[m][:,cat], sniffs[m]['trial_occur']<=2)
-            #valid_trials = np.logical_and(tr_incl[m][:,cat], sniffs[0]['trial_occur']<=1)
-        
-        tr_incl[m][:, cat] = valid_trials[:]*1
-        
+#%% Create odor category matrix, indicating for each trial which odor type is it     
 incl_descr = 'First odor presentation'
+tr_cat, tr_incl = st.select_trials_nov(sniffs, fam_min=5, fam_max=6, nov_min=1, nov_max=2)
+ncat = tr_cat[0].shape[1]
 
 #%% Calculate mean sniffing across time for selected presentation
 sniff_av = np.zeros([nframes, nses, ncat])
@@ -155,6 +126,7 @@ for p in range(npres):
 #%% Plot breathing across time for some selected trials
 fig, axes = plt.subplots(nmice, 1, sharex = 'all', sharey='all')
 axes = axes.flatten()
+tvec = np.linspace(-4, 7, nframes)
 
 for m in range(nmice):
     
@@ -214,7 +186,7 @@ fig.suptitle('Habituation curve')
 #%% Plot pupil for selected trials
 fig, axes = plt.subplots(nmice, 1, sharex = 'all', sharey='all')
 axes = axes.flatten()
-tvec = np.arange(-4, 8.02, 1/31)
+tvec = np.linspace(-4, 8, pup_nframes)
 
 for m in range(nmice):
     

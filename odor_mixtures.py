@@ -46,31 +46,7 @@ sr = sniffs[0]['samp_freq']
 bin_edges = np.arange(0, nframes, binsize*sr)
     
 #%% Restructure sniffing data into 3-dim array: trials x time point x mice
-# Using similar stracture, calculate breathing rate (multiple methods)
-# =============================================================================
-# sniff_ons = np.zeros([ntrials, nframes, nmice])
-# sniff_gauss = sniff_ons.copy()
-# sniff_delta = sniff_ons.copy()
-# sniff_list = []
-# sniff_bins = np.zeros([ntrials, bin_edges.size-1, nmice])
-# sniff_delbins = sniff_bins.copy()
-# 
-# for m in range(nmice):
-#     tmp_list = []
-#     for tr in range(ntrials):
-#         sniff_ons[tr, sniffs[m]['ml_inh_onsets'][tr], m] = 1 # code sniff onsets as 1
-#         tmp_list.append(sniffs[m]['ml_inh_onsets'][tr]) # store inhalation onsets also in (list for raster plots)
-#         
-#         sniff_gauss[tr, :, m] =  gaussian_filter1d(sniff_ons[tr,:,m], sigma*sr, mode = 'reflect') *sr
-#         bsl = np.mean(sniff_gauss[tr, bsln_start:odor_start, m])
-#         sniff_delta[tr, :, m] = sniff_gauss[tr, :, m] - bsl
-#         
-#         sniff_bins[tr,:,m] = np.histogram(tmp_list[tr], bin_edges)[0]/binsize
-#         sniff_delbins[tr,:,m] = sniff_bins[tr,:,m] - sniff_bins[tr,1,m]
-#         
-#     sniff_list.append(tmp_list)    
-# =============================================================================
-    
+# Using similar stracture, calculate breathing rate (multiple methods)    
 sniff_ons, sniff_list, sniff_bins, sniff_delbins, sniff_mybin = st.bin_sniff(sniffs, nframes, bsln_start, odor_start, sniff_the_bin, binsize)
 sniff_gauss, sniff_delta = st.ins_sniff(sniff_ons, bsln_start, odor_start, sigma, sr)
 
