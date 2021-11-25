@@ -4,116 +4,65 @@ Created on Thu Nov  4 10:07:17 2021
 
 @author: kkondrakiewicz
 """
-from scipy import io
-import glob
+
 import numpy as np
 from scipy.ndimage import gaussian_filter1d
 import matplotlib.pyplot as plt
 import copy
 import sys
 import h5py
-from scipy.signal import savgol_filter
+import glob
 sys.path.append(r'C:\Users\kkondrakiewicz\Documents\Python Scripts\Sniff')
-import utils_sniff as us
+import sniff_tools as st
+from scipy.signal import savgol_filter
 
 #%% Specify paths and some global analysis parameteres
-
 data_path = r'C:\Users\kkondrakiewicz\Desktop\PSAM_SC\data_all'
 expect_files = 3 # how many files per mice you expect
 nframes = 662 # how many camera frames per trial you expect
 pup_nframes = 373 # the same for pupil camera
+pup_sr = 31
 sigma = 0.25
 binsize = 2 # for binned analysis, bin size in seconds
-odor_start = 240
-odor_end = 360
-bsln_start = 120
+odor_start = 4
+odor_end = 6
+bsln_start = 2
 tvec = np.arange(-4, 7.03, 1/60)
 ndays = 2
-mybin = [5, 7] # concentrate on this part - from 1 sec to 3 sec after odor presentation
+sniff_the_bin = [5, 7] # concentrate on this part - from 1 sec to 3 sec after odor presentation
+pup_bin = [6, 8] # this can be different for pupil, which has slower dynamics
 
 #%% Import sniffing and trial data as a list of dictionaries - 1 dictionary for each mouse or session
-all_folders = glob.glob(data_path + '/**/')
-all_files = glob.glob(data_path + '/**/*.mat', recursive=True)
-
-nses = len(all_folders) # number of all recording sessions
-nmice = int(nses/ndays)
-
-sniffs = []
-
-for mouse in range(nses):
-    tmp_dict = {}
-    for file in range(expect_files):
-        file_idx = mouse*expect_files+file
-        tmp_dict = {**tmp_dict, **io.loadmat(all_files[file_idx], squeeze_me=True)}
-        
-    sniffs.append(tmp_dict)
+sniffs = st.import_sniff_mat(data_path)
 
 #%% Exctract some basic info from the imported data
+nses = len(sniffs)
+nmice = int(nses/ndays)
 ntrials = sniffs[0]['trial_idx'].size
 npres = max(sniffs[0]['trial_occur'])
 sr = sniffs[0]['samp_freq']
-bin_edges = np.arange(0, nframes, binsize*sr)
+#bin_edges = np.arange(0, nframes, binsize*sr)
 
-#%% Import pupil dilation data
-pup_files = glob.glob(data_path + '/**/*.h5', recursive=True)
-camlog_files = glob.glob(data_path + '/**/*.camlog', recursive=True)
-pup_ts = []
-pup_raw = []
+#%% Import pupil dilation data and parse it into trials
+pup_raw, pup_ts = st.import_pupil(data_path)
+pup_m = st.parse_pupil(pup_raw, pup_ts, ntrials, pup_nframes, nses, smoothen=1)
 
-for m in range(nses):
-    tmp_data = np.array(h5py.File(pup_files[m])['diameter'])
-    pup_raw.append(tmp_data)
-    
-    log,comm = us.parse_cam_log(camlog_files[m])
-    pup_ts.append(np.array(log['timestamp']))
-    
-# Parse pupil data into trials (3-dim array: trials x time point x mice)
-pup_m = np.empty([ntrials, pup_nframes, nses])
-pup_m[:] = np.nan
+#%% Normalize and average pupil data
 pup_delta = pup_m.copy()
 pup_mybin = np.zeros([ntrials, nses])
 
 for m in range(nses):
-    trial_starts = np.array(np.where(np.diff(pup_ts[m]) > 1e10)[0] + 1)
-    trial_starts = np.hstack([np.array([0]), trial_starts])
     for tr in range(ntrials):
-        tmp_data = pup_raw[m][trial_starts[tr]:trial_starts[tr]+pup_nframes]
-        tmp_data = savgol_filter(tmp_data, 51, 10)
-        pup_m[tr, 0:tmp_data.size, m] = tmp_data # sometimes camera drops a few frames in the last trial - this way those will be NaNs
-        
-        bsl = np.nanmean(tmp_data[2*31:4*31])
+        tmp_data = pup_m[tr, :, m]
+        bsl = np.nanmean(tmp_data[bsln_start*pup_sr : odor_start*pup_sr])
         pup_delta[tr, 0:tmp_data.size, m] = (tmp_data - bsl)
         
-        pup_mybin[tr, m] = np.nanmean(pup_delta[tr,6*31:8*31,m])
-        
-        
-#%% Restructure sniffing data into 3-dim array: trials x time point x mice
-# Using similar stracture, calculate breathing rate (multiple methods)
-sniff_ons = np.zeros([ntrials, nframes, nses])
-sniff_gauss = sniff_ons.copy()
-sniff_delta = sniff_ons.copy()
-sniff_list = []
-sniff_bins = np.zeros([ntrials, bin_edges.size-1, nses])
-sniff_delbins = sniff_bins.copy()
-sniff_mybin = np.zeros([ntrials, nses])
+        pup_mybin[tr, m] = np.nanmean(pup_delta[tr, pup_bin[0]*pup_sr:pup_bin[1]*pup_sr, m])
 
-for m in range(nses):
-    tmp_list = []
-    for tr in range(ntrials):
-        sniff_ons[tr, sniffs[m]['ml_inh_onsets'][tr], m] = 1 # code sniff onsets as 1
-        tmp_list.append(sniffs[m]['ml_inh_onsets'][tr]) # store inhalation onsets also in (list for raster plots)
-        
-        sniff_gauss[tr, :, m] =  gaussian_filter1d(sniff_ons[tr,:,m], sigma*sr, mode = 'reflect') *sr
-        bsl = np.mean(sniff_gauss[tr, bsln_start:odor_start, m])
-        sniff_delta[tr, :, m] = sniff_gauss[tr, :, m] - bsl
-        
-        sniff_bins[tr,:,m] = np.histogram(tmp_list[tr], bin_edges)[0]/binsize
-        sniff_delbins[tr,:,m] = sniff_bins[tr,:,m] - sniff_bins[tr,1,m]
-        
-        sniff_mybin[tr, m] = np.mean(sniff_delta[tr, mybin[0]*sr:mybin[1]*sr, m])
-        
-    sniff_list.append(tmp_list)    
-    
+
+#%% Restructure sniffing data into 3-dim array: trials x time point x miceand calculate breathing rate (multiple methods)
+sniff_ons, sniff_list, sniff_bins, sniff_delbins, sniff_mybin = st.bin_sniff(sniffs, nframes, bsln_start, odor_start, sniff_the_bin, binsize)
+sniff_gauss, sniff_delta = st.ins_sniff(sniff_ons, bsln_start, odor_start, sigma, sr)
 
 #%% Create odor category matrix, indicating for each trial which odor type is it
 # Each column corresponds to one category (key) from the 'odor_cat' dictionary
