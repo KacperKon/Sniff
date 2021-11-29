@@ -208,9 +208,10 @@ def av_by_occur(sniffs, trial_means, tr_cat):
 
     Returns
     -------
-    av_byoc 
-    n_byoc 
-    sem_byoc
+    av_byoc : 3-dim array (n occurences x n mice/sessions x n odor categories) - average
+        - If some stimuli occur less time then max_occur, respective entry will be NaN. 
+    n_byoc : as above; N of samples used for the calculation
+    sem_byoc : as above; standard error of the mean
 
     """
     

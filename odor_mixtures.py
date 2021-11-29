@@ -21,6 +21,7 @@ bsln_start = 2 # [sec]
 odor_start = 4 # [sec]
 odor_end = 6 # [sec]
 sniff_the_bin = [5, 7] # the bin of interest for sniffing analysis
+preblock = 4
 
 tvec = np.arange(-4, 7.03, 1/60) # time vector for single-trial plotting
 
@@ -67,15 +68,18 @@ for cat in range(len(odor_cat)):
         valid_trials = np.logical_and(sniffs[0]['trial_occur']>=5, sniffs[0]['trial_occur']<=5)
         valid_trials = np.logical_and(valid_trials, odor_cat_m[:,cat])
     else:
-        valid_trials = np.logical_and(odor_cat_m[:,cat], sniffs[0]['trial_occur']<=1)
-        
+        valid_trials = np.logical_and(odor_cat_m[:,cat], sniffs[0]['trial_occur']>=1)
+        valid_trials = np.logical_and(valid_trials, sniffs[0]['trial_occur']<=1)
     include_tr[valid_trials, cat] = 1
 
+incl_descr = 'First odor presentation'
+#incl_descr = 'Second odor presentation'
 
 #%% Calculate for each mouse sniffing time by odor occurence
 # because I assumed same trial structure for all mice (odor_cat_m is a matrix, not a list), just repeat it x nmice 
 sniff_1bin_av, sniff_1bin_n, sniff_1bin_sem = st.av_by_occur(sniffs, sniff_mybin, nmice*[odor_cat_m]) 
-
+fam_oc = sniff_1bin_av.shape[0]
+nov_oc = fam_oc - preblock
 
 #%% Plot breathing across time for each category
 
@@ -88,9 +92,12 @@ for m in range(nmice):
         tmp_data = sniff_delta[which_to_an, :, m].T
         tmp_data = np.mean(tmp_data, 1)
         axes[m].plot(tvec, tmp_data, label = list(odor_cat.keys())[cat])
+        axes[m].set_ylabel(u"\u0394" + ' sniffing [inh/sec]')
         
 #plt.legend(list(odor_cat.keys()), loc = 'lower right')
+plt.suptitle(incl_descr) 
 plt.legend()
+
 
 #%% Based on previous section, calculate average breathing for each odor category
 
@@ -99,66 +106,66 @@ npres = means.copy()
 
 for m in range(nmice):
     for cat in range(len(odor_cat)):
-        means[m, cat] = np.mean(sniff_delbins[np.where(include_tr[:,cat]==1),2, m])
+        which_to_an = sniffs[m]['trial_idx'][np.where(include_tr[:,cat] == 1)] - 1
+        means[m, cat] = np.mean(sniff_mybin[which_to_an, m])
         npres[m, cat] = np.sum(include_tr[:,cat])
 
 plt.figure()
 for ii in range(len(odor_cat)):
-    plt.scatter([ii, ii, ii], means[:,ii])
-    plt.legend(list(odor_cat.keys()))
+    plt.scatter([ii]*nmice, means[:,ii])
+    gr_av = np.mean(means[:,ii])
+    gr_sem = np.std(means[:,ii]) / np.sqrt(means[:,ii].size)
+    plt.bar(ii, gr_av, yerr = gr_sem, fill=False, color = 'k')
+plt.legend(list(odor_cat.keys()))
+plt.xticks([])
+plt.ylabel(u"\u0394" + ' sniffing [inh/sec]')
+plt.title(incl_descr) 
     
+#%% Make habituation curves for each animal
+fig, axes = plt.subplots(nmice, 1, sharex = 'all', sharey='all')
+axes = axes.flatten()
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-#%%
-mean_nov = np.zeros([nmice, nframes])
-mean_fam = np.zeros([nmice, nframes])
-# select first 4 occurences of new odorants
-#which_nov = np.squeeze(sniffs[0]['trial_novelty'] == 1) & np.squeeze(sniffs[0]['trial_occur'] <= 4)
-which_nov = (sniffs[0]['trial_chem_id'] == 114) & (sniffs[0]['trial_occur'] <= 4)
-# and first 4 of familiar ones (preblock)
-which_fam = (sniffs[0]['trial_familiarity'] == 1) & (sniffs[0]['trial_occur'] > 4) & (sniffs[0]['trial_occur'] <=8)
-
+pvec_f = np.arange(-(preblock-1),nov_oc+1) # vector of familiar occurences (preblock <= 0)
+pvec_n = np.arange(1,nov_oc+1) # same for novel occurences
 
 for m in range(nmice):
-    mean_nov[m,:] = np.mean(sniff_delta[which_nov,:,m], 0)
-    mean_fam[m,:] = np.mean(sniff_delta[which_fam,:,m], 0)
-
-
-#%%
-mouse = 2
-plt.figure()
-plt.plot(mean_nov[mouse,:].T, 'g')
-plt.plot(mean_fam[mouse,:].T, 'k')
-
-#%%
-for m in range(nmice):
-    plt.figure()
-    plt.eventplot(sniff_list[m])
-    plt.axvline(odor_start*sr, linestyle = '--', color = 'gray', linewidth = 1)
-    plt.axvline(odor_end, linestyle = '--', color = 'gray', linewidth = 1)
+    for cat in range(sniff_1bin_av.shape[2]):
+        if cat <= 1:
+            axes[m].errorbar(pvec_f, sniff_1bin_av[:,m,cat], sniff_1bin_sem[:,m,cat], label = list(odor_cat.keys())[cat])
+        else:
+            axes[m].errorbar(pvec_n, sniff_1bin_av[0:nov_oc,m,cat], sniff_1bin_sem[0:nov_oc,m,cat], label = list(odor_cat.keys())[cat])
+            
+            axes[m].set_ylabel(u"\u0394" + ' sniffing [inh/sec]')
     
-#%%
+    ax2 = axes[m].twinx()
+    ax2.set_yticks([])
+    mouse_id = sniffs[m]['unique_id'][7:12]
+    ax2.set_ylabel('Mouse ' + mouse_id)
+     
+axes[m].legend()
+axes[m].set_xticklabels(['PB1', 'PB2', 'PB4', '2', '4', '6', '8'])
+axes[m].set_xlabel('Presentation number')
+fig.suptitle('Habituation curve - individual mice')
+
+
+#%% And one average hab curve
+hab_av = np.nanmean(sniff_1bin_av,1)
+hab_av[4:12,2:] = hab_av[0:8,2:]
+hab_av[0:4,2:] = np.nan
+
+hab_sem = np.nanstd(sniff_1bin_av,1) / np.sqrt(nmice)
+hab_sem[4:12,2:] = hab_sem[0:8,2:]
+hab_sem[0:4,2:] = np.nan
+
 plt.figure()
-m = 0
-tr = 20
-plt.plot(np.repeat(sniff_bins[tr,:,m], binsize*sr))
-plt.plot(np.repeat(sniff_delbins[tr,:,m], binsize*sr))
-plt.plot(sniff_gauss[tr,:,m])
-plt.eventplot(sniff_list[m][tr])
+for cat in range(len(odor_cat)):
+    plt.errorbar(pvec_f, hab_av[:,cat], hab_sem[:,cat])
+    
+plt.xticks(np.arange(-2, 9, 2), labels = ['PB2', 'PB4', '2', '4', '6', '8'])
+plt.title('Habituation curve - average')
+plt.ylabel(u"\u0394" + ' sniffing [inh/sec]')
+plt.legend(list(odor_cat.keys()))
 
 
 
-# 102 in odor_cat['familiar single']
     

@@ -26,6 +26,8 @@ ndays = 2
 sniff_the_bin = [5, 7] # concentrate on this part - from 1 sec to 3 sec after odor presentation
 pup_bin = [6, 8] # this can be different for pupil, which has slower dynamics
 
+fig_path = r'C:\Users\kkondrakiewicz\Desktop\PSAM_SC\plots'
+
 #%% Import sniffing and trial data as a list of dictionaries - 1 dictionary for each mouse or session
 sniffs = st.import_sniff_mat(data_path)
 
@@ -57,8 +59,8 @@ sniff_ons, sniff_list, sniff_bins, sniff_delbins, sniff_mybin = st.bin_sniff(sni
 sniff_gauss, sniff_delta = st.ins_sniff(sniff_ons, bsln_start, odor_start, sigma, sr)
 
 #%% Create odor category matrix, indicating for each trial which odor type is it     
-incl_descr = 'First odor presentation'
-tr_cat, tr_incl = st.select_trials_nov(sniffs, fam_min=5, fam_max=6, nov_min=1, nov_max=2)
+incl_descr = '1st odor presentation'
+tr_cat, tr_incl = st.select_trials_nov(sniffs, fam_min=5, fam_max=5, nov_min=1, nov_max=1)
 ncat = tr_cat[0].shape[1]
 
 #%% Calculate mean and SEM for each occurence of a given trial type
@@ -75,6 +77,8 @@ for m in range(nses):
         which_incl = sniffs[m]['trial_idx'][np.where(tr_incl[m][:,cat] == 1)] - 1 # IN MATLAB TRIAL INDEXES START FROM 1!!
         
         tmp_data = sniff_delta[which_incl, :, m].T
+        #tmp_data = sniff_gauss[which_incl, :, m].T
+        
         sniff_av[:,m,cat] = np.mean(tmp_data, 1)
         sniff_sem[:,m,cat] = np.std(tmp_data, 1) / np.sqrt(sniff_n[cat])
              
@@ -88,6 +92,7 @@ for m in range(nses):
         which_incl = sniffs[m]['trial_idx'][np.where(tr_incl[m][:,cat] == 1)] - 1 # IN MATLAB TRIAL INDEXES START FROM 1!!
         
         tmp_data = pup_delta[which_incl, :, m].T
+        #tmp_data = pup_m[which_incl, :, m].T
         
         pup_av[:,m,cat] = np.nanmean(tmp_data, 1)
         pup_sem[:,m,cat] = np.nanstd(tmp_data, 1) / np.sqrt(pup_n[cat])
@@ -124,6 +129,8 @@ axes[m].legend()
 axes[m].set_xlabel('Time from odor presentation [sec]')
 fig.suptitle(incl_descr)
 
+#plt.savefig(fig_path + '\\Sniff_' + incl_descr + '.png')
+
 #%% Plot habituation curve for each mouse
 fig, axes = plt.subplots(nmice, 1, sharex = 'all', sharey='all')
 axes = axes.flatten()
@@ -151,7 +158,7 @@ axes[m].set_xticklabels(['PB1', 'PB2', 'PB4', '2', '4', '6', '8', '10'])
 axes[m].set_xlabel('Presentation number')
 fig.suptitle('Habituation curve')
 
-
+#plt.savefig(fig_path + '\\Sniff_hab.png')
 
 #%% Plot pupil for selected trials
 fig, axes = plt.subplots(nmice, 1, sharex = 'all', sharey='all')
@@ -185,6 +192,7 @@ axes[m].legend()
 axes[m].set_xlabel('Time from odor presentation [sec]')
 fig.suptitle(incl_descr)
 
+#plt.savefig(fig_path + '\\Pupil_' + incl_descr + '.png')
 
 #%% Plot pupil habituation curve for each mouse
 fig, axes = plt.subplots(nmice, 1, sharex = 'all', sharey='all')
@@ -213,3 +221,4 @@ axes[m].set_xticklabels(['PB1', 'PB2', 'PB4', '2', '4', '6', '8', '10'])
 axes[m].set_xlabel('Presentation number')
 fig.suptitle('Habituation curve')
 
+#plt.savefig(fig_path + '\\Pupil_hab.png')

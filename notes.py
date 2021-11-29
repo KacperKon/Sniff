@@ -56,6 +56,40 @@ for m in range(nses):
     sniff_list.append(tmp_list) 
     
     
+#%% Calculate 1 mean sniffing value for all presentations
+sniff_1bin_av = np.zeros([npres, nses, ncat])
+sniff_1bin_n = sniff_1bin_av.copy()
+sniff_1bin_sem = sniff_1bin_av.copy()
+
+for p in range(npres):
+    for m in range(nses):
+        for cat in range(ncat):
+            which_tr = np.logical_and(tr_cat[m][:,cat], sniffs[m]['trial_occur'] == p+1)
+            which_rows = sniffs[m]['trial_idx'][which_tr] - 1
+            
+            tmp_data = sniff_mybin[which_rows, m]
+            sniff_1bin_av[p, m, cat] = np.mean(tmp_data)
+            sniff_1bin_n[p, m, cat] = tmp_data.size
+            sniff_1bin_sem[p, m, cat] = np.std(tmp_data) / np.sqrt(sniff_1bin_n[p, m, cat])
+            
+            
+#%% The same, but for pupil
+pup_1bin_av = np.zeros([npres, nses, ncat])
+pup_1bin_n = pup_1bin_av.copy()
+pup_1bin_sem = pup_1bin_av.copy()
+
+for p in range(npres):
+    for m in range(nses):
+        for cat in range(ncat):
+            which_tr = np.logical_and(tr_cat[m][:,cat], sniffs[m]['trial_occur'] == p+1)
+            which_rows = sniffs[m]['trial_idx'][which_tr] - 1
+            
+            tmp_data = pup_mybin[which_rows, m]
+            pup_1bin_av[p, m, cat] = np.nanmean(tmp_data)
+            pup_1bin_n[p, m, cat] = tmp_data.size
+            pup_1bin_sem[p, m, cat] = np.std(tmp_data) / np.sqrt(pup_1bin_n[p, m, cat])
+    
+    
 #%%
 plt.figure()
 m = 0
