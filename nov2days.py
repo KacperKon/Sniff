@@ -61,6 +61,10 @@ incl_descr = 'First odor presentation'
 tr_cat, tr_incl = st.select_trials_nov(sniffs, fam_min=5, fam_max=6, nov_min=1, nov_max=2)
 ncat = tr_cat[0].shape[1]
 
+#%% Calculate mean and SEM for each occurence of a given trial type
+sniff_1bin_av, sniff_1bin_n, sniff_1bin_sem = st.av_by_occur(sniffs, sniff_mybin, tr_cat)
+pup_1bin_av, pup_1bin_n, pup_1bin_sem = st.av_by_occur(sniffs, pup_mybin, tr_cat)
+
 #%% Calculate mean sniffing across time for selected presentation
 sniff_av = np.zeros([nframes, nses, ncat])
 sniff_n = np.sum(tr_incl[0], 0)
@@ -73,8 +77,7 @@ for m in range(nses):
         tmp_data = sniff_delta[which_incl, :, m].T
         sniff_av[:,m,cat] = np.mean(tmp_data, 1)
         sniff_sem[:,m,cat] = np.std(tmp_data, 1) / np.sqrt(sniff_n[cat])
-        
-        
+             
 #%% The same, but for mean pupil
 pup_av = np.zeros([pup_nframes, nses, ncat])
 pup_n = np.sum(tr_incl[0], 0)
@@ -89,39 +92,6 @@ for m in range(nses):
         pup_av[:,m,cat] = np.nanmean(tmp_data, 1)
         pup_sem[:,m,cat] = np.nanstd(tmp_data, 1) / np.sqrt(pup_n[cat])
         
-        
-#%% Calculate 1 mean sniffing value for all presentations
-sniff_1bin_av = np.zeros([npres, nses, ncat])
-sniff_1bin_n = sniff_1bin_av.copy()
-sniff_1bin_sem = sniff_1bin_av.copy()
-
-for p in range(npres):
-    for m in range(nses):
-        for cat in range(ncat):
-            which_tr = np.logical_and(tr_cat[m][:,cat], sniffs[m]['trial_occur'] == p+1)
-            which_rows = sniffs[m]['trial_idx'][which_tr] - 1
-            
-            tmp_data = sniff_mybin[which_rows, m]
-            sniff_1bin_av[p, m, cat] = np.mean(tmp_data)
-            sniff_1bin_n[p, m, cat] = tmp_data.size
-            sniff_1bin_sem[p, m, cat] = np.std(tmp_data) / np.sqrt(sniff_1bin_n[p, m, cat])
-            
-            
-#%% The same, but for pupil
-pup_1bin_av = np.zeros([npres, nses, ncat])
-pup_1bin_n = pup_1bin_av.copy()
-pup_1bin_sem = pup_1bin_av.copy()
-
-for p in range(npres):
-    for m in range(nses):
-        for cat in range(ncat):
-            which_tr = np.logical_and(tr_cat[m][:,cat], sniffs[m]['trial_occur'] == p+1)
-            which_rows = sniffs[m]['trial_idx'][which_tr] - 1
-            
-            tmp_data = pup_mybin[which_rows, m]
-            pup_1bin_av[p, m, cat] = np.nanmean(tmp_data)
-            pup_1bin_n[p, m, cat] = tmp_data.size
-            pup_1bin_sem[p, m, cat] = np.std(tmp_data) / np.sqrt(pup_1bin_n[p, m, cat])
 
 #%% Plot breathing across time for some selected trials
 fig, axes = plt.subplots(nmice, 1, sharex = 'all', sharey='all')

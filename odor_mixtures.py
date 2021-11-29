@@ -4,10 +4,7 @@ Created on Thu Nov  4 10:07:17 2021
 
 @author: kkondrakiewicz
 """
-from scipy import io
-import glob
 import numpy as np
-from scipy.ndimage import gaussian_filter1d
 import matplotlib.pyplot as plt
 import sys
 sys.path.append(r'C:\Users\kkondrakiewicz\Documents\Python Scripts\Sniff')
@@ -18,13 +15,15 @@ import sniff_tools as st
 data_path = r'C:\Users\kkondrakiewicz\Desktop\mixtures'
 expect_files = 3 # how many files per mice you expect
 nframes = 662 # how many camera frames per trial you expect
-sigma = 0.25
 binsize = 2 # for binned analysis, bin size in seconds
-odor_start = 4
-odor_end = 6
-bsln_start = 0
-tvec = np.arange(-4, 7.03, 1/60)
-sniff_the_bin = [5, 7]
+sigma = 0.25 # for instantenous sniffing rate analysis, sigma of gaussian kernel [sec]
+bsln_start = 2 # [sec]
+odor_start = 4 # [sec]
+odor_end = 6 # [sec]
+sniff_the_bin = [5, 7] # the bin of interest for sniffing analysis
+
+tvec = np.arange(-4, 7.03, 1/60) # time vector for single-trial plotting
+
 
 #%% Group odorants by categories
 odor_cat = {'fam_sing': [102, 107, 108, 113, 124, 104],
@@ -62,16 +61,36 @@ for key in odor_cat.keys():
             odor_cat_m[tr, key_idx] = 1
     key_idx = key_idx + 1
     
-#%% Now from the odor category matrix exclude some trials based on presentation no.
-
+# Now from the odor category matrix exclude some trials based on presentation no.
 for cat in range(len(odor_cat)):
     if cat <= 1: # for familiar odorants (2 first catumns of odor_cat_m), exclude preblock trials
-        valid_trials = np.logical_and(sniffs[0]['trial_occur']>=5, sniffs[0]['trial_occur']<=6)
+        valid_trials = np.logical_and(sniffs[0]['trial_occur']>=5, sniffs[0]['trial_occur']<=5)
         valid_trials = np.logical_and(valid_trials, odor_cat_m[:,cat])
     else:
-        valid_trials = np.logical_and(odor_cat_m[:,cat], sniffs[0]['trial_occur']<=2)
+        valid_trials = np.logical_and(odor_cat_m[:,cat], sniffs[0]['trial_occur']<=1)
         
     include_tr[valid_trials, cat] = 1
+
+
+#%% Calculate for each mouse sniffing time by odor occurence
+# because I assumed same trial structure for all mice (odor_cat_m is a matrix, not a list), just repeat it x nmice 
+sniff_1bin_av, sniff_1bin_n, sniff_1bin_sem = st.av_by_occur(sniffs, sniff_mybin, nmice*[odor_cat_m]) 
+
+
+#%% Plot breathing across time for each category
+
+fig, axes = plt.subplots(3, 1, sharex = 'col')
+axes = axes.flatten()
+
+for m in range(nmice):
+    for cat in range(len(odor_cat)):
+        which_to_an = sniffs[m]['trial_idx'][np.where(include_tr[:,cat] == 1)] - 1 # subtract 1, because 'trial_idx' stores Matlab indexes starting from 1 
+        tmp_data = sniff_delta[which_to_an, :, m].T
+        tmp_data = np.mean(tmp_data, 1)
+        axes[m].plot(tvec, tmp_data, label = list(odor_cat.keys())[cat])
+        
+#plt.legend(list(odor_cat.keys()), loc = 'lower right')
+plt.legend()
 
 #%% Based on previous section, calculate average breathing for each odor category
 
@@ -87,21 +106,10 @@ plt.figure()
 for ii in range(len(odor_cat)):
     plt.scatter([ii, ii, ii], means[:,ii])
     plt.legend(list(odor_cat.keys()))
+    
 
-#%% Plot breathing across time for each category
 
-fig, axes = plt.subplots(3, 1, sharex = 'col')
-axes = axes.flatten()
 
-for m in range(nmice):
-    for cat in range(len(odor_cat)):
-        which_to_an = sniffs[m]['trial_idx'][np.where(include_tr[:,cat] == 1)] - 1
-        tmp_data = sniff_delta[which_to_an, :, m].T
-        tmp_data = np.mean(tmp_data, 1)
-        axes[m].plot(tvec, tmp_data, label = list(odor_cat.keys())[cat])
-        
-#plt.legend(list(odor_cat.keys()), loc = 'lower right')
-plt.legend()
 
 
 
