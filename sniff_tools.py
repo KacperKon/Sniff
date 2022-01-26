@@ -185,9 +185,9 @@ def select_trials_nov(sniffs, fam_min, fam_max, nov_min, nov_max):
                 valid_trials = np.logical_and(sniffs[m]['trial_occur']>=fam_min, sniffs[m]['trial_occur']<=fam_max)
                 valid_trials = np.logical_and(valid_trials, tr_incl[m][:,cat])
             else:
-                valid_trials = np.logical_and(tr_incl[m][:,cat], sniffs[m]['trial_occur']>=nov_min)
-                valid_trials = np.logical_and(tr_incl[m][:,cat], sniffs[m]['trial_occur']<=nov_max)
-            
+                valid_trials = np.logical_and(sniffs[m]['trial_occur']>=nov_min, sniffs[m]['trial_occur']<=nov_max)
+                valid_trials = np.logical_and(valid_trials, tr_incl[m][:,cat])
+
             tr_incl[m][:, cat] = valid_trials[:]*1
             
     return tr_cat, tr_incl
