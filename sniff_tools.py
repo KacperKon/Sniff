@@ -302,6 +302,7 @@ def parse_pupil(pup_raw, pup_ts, ntrials, nframes, nses, smoothen = 0, window_le
         for tr in range(ntrials):
             tmp_data = pup_raw[m][trial_starts[tr]:trial_starts[tr]+nframes]
             if smoothen == 1:
+                tmp_data = np.interp(np.arange(len(tmp_data)), np.arange(len(tmp_data))[np.isnan(tmp_data) == False], tmp_data[np.isnan(tmp_data) == False])
                 tmp_data = savgol_filter(tmp_data, window_length, polyorder)
             pup_m[tr, 0:tmp_data.size, m] = tmp_data # sometimes camera drops a few frames in the last trial - this way those will be NaNs
             
