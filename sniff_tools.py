@@ -51,6 +51,36 @@ def import_sniff_mat(data_path, expect_files = 3):
         
     return sniffs
 
+def import_sniff_mat_select(paths_list):
+    r"""
+    Import pre-processed behavioral data on sniffing and trial structure.
+    This version requires specyfing from which folders exactly you want to import.
+    The assumption is that there is a folder per session organization.
+
+    Parameters
+    ----------
+    paths_list : list of paths, e.g. paths_list[0] = 'C:\\data\\220308_KK012'
+
+    Returns
+    -------
+    sniffs : a list of dictionaries 
+    Should contain all the fields from imported Matlab structures (in a single dictionary for each mouse / session).
+    
+    """
+    nses = len(paths_list) # number of all recording sessions
+    
+    sniffs = []
+    
+    for mouse in range(nses):
+        tmp_dict = {}
+        tmp_files = glob.glob(paths_list[mouse] + '/*.mat')
+        for file in tmp_files:
+            tmp_dict = {**tmp_dict, **io.loadmat(file, squeeze_me=True)}
+            
+        sniffs.append(tmp_dict)
+        
+    return sniffs
+
 
 def bin_sniff(sniffs, nframes, bsln_start, odor_start, the_bin, binsize):
     r"""
@@ -267,8 +297,12 @@ def import_pupil(data_path, file_ext = 'h5'):
         tmp_data = np.array(h5py.File(pup_files[m])['diameter'])
         pup_raw.append(tmp_data)
         
-        log,comm = parse_cam_log(camlog_files[m])
-        pup_ts.append(np.array(log['timestamp']))
+        if len(camlog_files) > 0:
+            log,comm = parse_cam_log(camlog_files[m])
+            pup_ts.append(np.array(log['timestamp']))
+        else:
+            pup_ts = np.nan
+            print("Could not find .camlog file - frames have no timestamps")
         
     return pup_raw, pup_ts
 
