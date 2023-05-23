@@ -82,7 +82,7 @@ def import_sniff_mat_select(paths_list):
     return sniffs
 
 
-def bin_sniff(sniffs, nframes, bsln_start, odor_start, the_bin, binsize):
+def bin_sniff(sniffs, nframes, bsln_start, odor_start, the_bin, binsize, classic_tracker = False):
     r"""
     Based on imported .mat strutcures, calculate sniffing rate in bins.
 
@@ -94,6 +94,7 @@ def bin_sniff(sniffs, nframes, bsln_start, odor_start, the_bin, binsize):
     odor_start : [sec] - it's also end of baseline period
     the_bin : list of 2 elements [sec] - edges of your bin of interest - size of this bin might be different from the binsize
     binsize : [sec] - size of bin for calculation of breatinh rate
+    classic_tracker : set to True if you want to use old FLIR tracker algorithm results and not DeepSniff
 
     Returns
     -------
@@ -122,9 +123,13 @@ def bin_sniff(sniffs, nframes, bsln_start, odor_start, the_bin, binsize):
     for m in range(nses):
         tmp_list = []
         for tr in range(ntrials):
-            sniff_ons[tr, sniffs[m]['ml_inh_onsets'][tr], m] = 1 # code sniff onsets as 1
-            tmp_list.append(sniffs[m]['ml_inh_onsets'][tr]) # store inhalation onsets also in a list (for raster plots)
-                
+            if classic_tracker == False:
+                sniff_ons[tr, sniffs[m]['ml_inh_onsets'][tr], m] = 1 # code sniff onsets as 1
+                tmp_list.append(sniffs[m]['ml_inh_onsets'][tr]) # store inhalation onsets also in a list (for raster plots)
+            elif classic_tracker == True:
+                sniff_ons[tr, sniffs[m]['ft_inh_onsets'][tr], m] = 1 # code sniff onsets as 1
+                tmp_list.append(sniffs[m]['ft_inh_onsets'][tr])
+              
             sniff_hist[tr,:,m] = np.histogram(tmp_list[tr], bin_edges)[0]/binsize
             bsln = np.sum(sniff_ons[tr, int(bsln_start*sr) : int(odor_start*sr), m])/bsln_size
             sniff_delhist[tr,:,m] = sniff_hist[tr,:,m] - bsln
