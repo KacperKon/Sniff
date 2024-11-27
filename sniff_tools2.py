@@ -4,6 +4,8 @@ Created on Thu Nov 18 20:36:45 2021
 @author: kkondrakiewicz
 
 Functions for analyzing breathing rate and pupil diameter from head-fixed animals.
+The current version, v2, is using lists of 2-dim arrays instead of 3-dim arrays,
+which allows to analyze datasets with animals reveiving unequal number of trials.
 """
 import re
 import pandas as pd
@@ -89,7 +91,7 @@ def bin_sniff(sniffs, nframes, bsln_start, odor_start, the_bin, binsize, classic
     Parameters
     ----------
     sniffs : output of the import_sniff_mat function
-    nframes : how many frames you expect in each trial from the sniff camera
+    nframes : how many frames you want in each trial from the sniff camera; everything after will be ignored
     bsln_start : start of baseline for breathing rate normalization [sec]
     odor_start : [sec] - it's also end of baseline period
     the_bin : list of 2 elements [sec] - edges of your bin of interest - size of this bin might be different from the binsize
@@ -98,43 +100,52 @@ def bin_sniff(sniffs, nframes, bsln_start, odor_start, the_bin, binsize, classic
 
     Returns
     -------
-    sniff_ons : 3-dim array (n trials x n frames x n mice/sessions) with binarized sniff onsets (onset == 1) 
-    sniff_list : the same data as above, but stored as list of lists (mice >> trials) - handy for rasterplots
-    sniff_hist : 3-dim array (n trials x n bins x n mice/sessions) 
+    sniff_ons : list (n mice/sessions) of 2-dim arrays (n trials x n frames) with binarized sniff onsets (onset == 1) 
+    sniff_list : the same data as above, but stored as list of lists of timestamps (mice >> trials) - handy for rasterplots
+    sniff_hist : list (n mice/sessions) of 2-dim arrays (n trials x n bins)
                 a histogram of breaths count for each bin, normalized by the bin size (so in Hz) 
     sniff_delhist : as above, but the breathing rate from the baseline period is subtracted
-    sniff_mybin : 2-dim array (n trials x n mice/sessions) - sniffing rate for one selected bin, which can be of different size 
-                then the 'binsize', subtracted from the baseline
+    sniff_mybin : list (n mice) of 1-dim arrays (n trials) - sniffing rate for one selected bin, 
+                which can be of different size than the 'binsize', subtracted from the baseline
 
     """
 
+    # Extract basic variables 
     nses = len(sniffs)
-    ntrials = sniffs[0]['trial_idx'].size
-    sr = sniffs[0]['samp_freq']
+    ntrials = [x['trial_idx'].size for x in sniffs]
+    sr = [x['samp_freq'] for x in sniffs]
+    if np.std(sr) != 0:
+        print('Different sessions were acquired with different camera sampling rates! Not supported :(')
+    else:
+        sr = sr[0]
     bin_edges = np.arange(0, nframes, binsize*sr)
     bsln_size = (int(odor_start*sr) - int(bsln_start*sr)) / sr
     
-    sniff_ons = np.zeros([ntrials, nframes, nses])
+    # Prepare structures to fill with the data
+    sniff_ons = [np.zeros([nt, nframes]) for nt in ntrials] # list (n mice) of arrays (n trials x n mice)   
+    sniff_hist    = [np.zeros([nt, bin_edges.size-1]) for nt in ntrials]
+    sniff_delhist = [np.zeros([nt, bin_edges.size-1]) for nt in ntrials]
+    sniff_mybin = [np.zeros([nt]) for nt in ntrials]
     sniff_list = []
-    sniff_hist = np.zeros([ntrials, bin_edges.size-1, nses])
-    sniff_delhist = sniff_hist.copy()
-    sniff_mybin = np.zeros([ntrials, nses])
 
+    # Calculate sniffing rates
     for m in range(nses):
         tmp_list = []
-        for tr in range(ntrials):
+        for tr in range(ntrials[m]):
             if classic_tracker == False:
-                sniff_ons[tr, sniffs[m]['ml_inh_onsets'][tr], m] = 1 # code sniff onsets as 1
-                tmp_list.append(sniffs[m]['ml_inh_onsets'][tr]) # store inhalation onsets also in a list (for raster plots)
+                in_win = sniffs[m]['ml_inh_onsets'][tr] <= nframes-1 # select inhalations no later than 'nframes'
+                sniff_ons[m][tr, sniffs[m]['ml_inh_onsets'][tr][in_win]] = 1 # code sniff onsets as 1
+                tmp_list.append(sniffs[m]['ml_inh_onsets'][tr][in_win]) # store inhalation onsets also in a list (for raster plots)
             elif classic_tracker == True:
-                sniff_ons[tr, sniffs[m]['ft_inh_onsets'][tr], m] = 1 # code sniff onsets as 1
-                tmp_list.append(sniffs[m]['ft_inh_onsets'][tr])
+                in_win = sniffs[m]['ft_inh_onsets'][tr] <= nframes-1
+                sniff_ons[m][tr, sniffs[m]['ft_inh_onsets'][tr][in_win]] = 1 
+                tmp_list.append(sniffs[m]['ft_inh_onsets'][tr][in_win])
               
-            sniff_hist[tr,:,m] = np.histogram(tmp_list[tr], bin_edges)[0]/binsize
-            bsln = np.sum(sniff_ons[tr, int(bsln_start*sr) : int(odor_start*sr), m])/bsln_size
-            sniff_delhist[tr,:,m] = sniff_hist[tr,:,m] - bsln
+            sniff_hist[m][tr,:] = np.histogram(tmp_list[tr], bin_edges)[0]/binsize
+            bsln = np.sum(sniff_ons[m][tr, int(bsln_start*sr) : int(odor_start*sr)])/bsln_size
+            sniff_delhist[m][tr,:] = sniff_hist[m][tr,:] - bsln
                 
-            sniff_mybin[tr, m] = np.sum(sniff_ons[tr, int(the_bin[0]*sr) : int(the_bin[1]*sr), m])/(the_bin[1] - the_bin[0]) - bsln
+            sniff_mybin[m][tr] = np.sum(sniff_ons[m][tr, int(the_bin[0]*sr) : int(the_bin[1]*sr)])/(the_bin[1] - the_bin[0]) - bsln
                 
         sniff_list.append(tmp_list)
         
@@ -158,22 +169,24 @@ def ins_sniff(sniff_ons, bsln_start, odor_start, sigma = 0.25, sr = 60):
 
     Returns
     -------
-    sniff_gauss : 3-dim array (n trials x n frames x n mice/sessions) with instantenous sniffing rate
+    sniff_gauss : list (n mice/sessions) of 2-dim arrays (n trials x n frames) with instantenous sniffing rate
     sniff_delta : as above, but with baseline sniffing subtracted
 
     """
     
-    sniff_gauss = np.zeros(sniff_ons.shape)
-    sniff_delta = np.zeros(sniff_ons.shape)
+    nses = len(sniff_ons)
+    ntrials = [x.shape[0] for x in sniff_ons]
+    nframes = sniff_ons[0].shape[1]
     
-    nses = sniff_ons.shape[2]
-    ntrials = sniff_ons.shape[0]
+    sniff_gauss = [np.zeros([nt, nframes]) for nt in ntrials]
+    sniff_delta = [np.zeros([nt, nframes]) for nt in ntrials]
+    
     
     for m in range(nses):
-        for tr in range(ntrials):
-            sniff_gauss[tr, :, m] =  gaussian_filter1d(sniff_ons[tr,:,m], sigma*sr, mode = 'reflect') *sr
-            bsl = np.mean(sniff_gauss[tr, int(bsln_start*sr):int(odor_start*sr), m])
-            sniff_delta[tr, :, m] = sniff_gauss[tr, :, m] - bsl
+        for tr in range(ntrials[m]):
+            sniff_gauss[m][tr, :] =  gaussian_filter1d(sniff_ons[m][tr,:], sigma*sr, mode = 'reflect') *sr
+            bsl = np.mean(sniff_gauss[m][tr, int(bsln_start*sr):int(odor_start*sr)])
+            sniff_delta[m][tr, :] = sniff_gauss[m][tr, :] - bsl
      
     return sniff_gauss, sniff_delta
 
@@ -251,13 +264,13 @@ def av_by_occur(sniffs, trial_means, tr_cat):
     """
     
     max_occur = np.max([np.max(x['trial_occur']) for x in sniffs]) # what was the maximal number of 1 stimulus occurences in all data?
-    nses = trial_means.shape[1] # no of sessions/mice
-    ncat = tr_cat[0].shape[1] # number of odorant categories
+    nses = len(sniffs)
+    ncat = tr_cat[0].shape[1] # number of odorant categories; we assume the same for all mice
     
     
     av_byoc = np.zeros([max_occur, nses, ncat])
-    n_byoc = av_byoc.copy()
-    sem_byoc = av_byoc.copy()
+    n_byoc = np.zeros([max_occur, nses, ncat])
+    sem_byoc = np.zeros([max_occur, nses, ncat])
     
     for p in range(max_occur):
         for m in range(nses):
@@ -265,12 +278,13 @@ def av_by_occur(sniffs, trial_means, tr_cat):
                 which_tr = np.logical_and(tr_cat[m][:,cat], sniffs[m]['trial_occur'] == p+1)
                 which_rows = sniffs[m]['trial_idx'][which_tr] - 1
                 
-                tmp_data = trial_means[which_rows, m]
+                tmp_data = trial_means[m][which_rows]
                 av_byoc[p, m, cat] = np.nanmean(tmp_data)
                 n_byoc[p, m, cat] = tmp_data.size
                 sem_byoc[p, m, cat] = np.nanstd(tmp_data) / np.sqrt(n_byoc[p, m, cat])
 
     return av_byoc, n_byoc, sem_byoc
+
 
 def gen_ast(pval):
     """
