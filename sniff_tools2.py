@@ -16,6 +16,12 @@ import h5py
 from scipy.signal import savgol_filter
 from scipy.ndimage import gaussian_filter1d
 import copy
+import matplotlib.pyplot as plt
+from statsmodels.stats.anova import AnovaRM 
+from statsmodels.stats.multitest import fdrcorrection as fdr
+from scipy import stats
+from matplotlib.patches import Rectangle
+
 
 #%% Functions for behavioral (sniffing) data
 
@@ -142,7 +148,7 @@ def bin_sniff(sniffs, nframes, bsln_start, odor_start, the_bin, binsize, classic
                 tmp_list.append(sniffs[m]['ft_inh_onsets'][tr][in_win])
               
             sniff_hist[m][tr,:] = np.histogram(tmp_list[tr], bin_edges)[0]/binsize
-            bsln = np.sum(sniff_ons[m][tr, int(bsln_start*sr) : int(odor_start*sr)])/bsln_size
+            bsln = np.sum(sniff_ons[m][tr, int(bsln_start*sr) : int(odor_start*sr) ])/bsln_size
             sniff_delhist[m][tr,:] = sniff_hist[m][tr,:] - bsln
                 
             sniff_mybin[m][tr] = np.sum(sniff_ons[m][tr, int(the_bin[0]*sr) : int(the_bin[1]*sr)])/(the_bin[1] - the_bin[0]) - bsln
@@ -410,7 +416,7 @@ def parse_log_comments(comm,msg = 'trial_start:',strkeyname = 'i_trial',strforma
     return pd.DataFrame(table)
 
 
-#%% Fnctions written by Michiel Camps to process video data (pupil, motion etc.)
+#%% Functions written by Michiel Camps to process video data (pupil, motion etc.)
 
 # Some boilerplate functions for loading keypoints and timestamps etc.
 def load_keypoints(wd):
@@ -469,3 +475,219 @@ def split_trials(ts, series):
     def stacker(s):
         return [np.take(s, np.asarray(range(splits[i], splits[i+1])), 0) for i in range(len(splits)-1)]
     return stacker(ts), stacker(series)
+
+
+#%% Functions for standard plots and statistics (for the paper)
+
+def rm_anova(data, pairs):
+    r"""
+    Run one-way repeated-measures ANOVA on your data, 
+    followed by paired t-tests with FDR correction.
+
+    Parameters
+    ----------
+    data : array of shape subjects x repeated measures
+    pairs : array of shape 2 x comparisons:
+        indexes of columns to compare with the t-test
+
+    Returns
+    -------
+    anova_res, pvals, pvals_adj
+
+    """
+    
+    nmice = data.shape[0]
+    ngroups = data.shape[1]
+
+    grav = np.reshape(data, [np.size(data),],'F')
+    group = np.arange(0, ngroups)
+    group = np.repeat(group, nmice)
+    
+    df = pd.DataFrame({'Dependent': grav, 'Group': group, 'Mouse': np.tile(np.arange(nmice), ngroups)})
+    excl_mice = df['Mouse'][np.isnan(df['Dependent'])].values
+    
+    anova_res = AnovaRM(data=df[~df['Mouse'].isin(excl_mice)],
+                depvar='Dependent', subject='Mouse', within=['Group']).fit() 
+    print(anova_res) 
+    
+    pvals = []
+    for ii in range(pairs.shape[1]):    
+        stat, p = stats.ttest_rel(grav[group==pairs[0, ii]], grav[group==pairs[1, ii]],
+                                  nan_policy = 'omit')
+        pvals.append(p)
+    pvals = np.array(pvals)
+    
+    pvals_adj = fdr(pvals)[1]
+    
+    print('       P values (uncorrected):')
+    print(np.round(pvals, 3))
+    
+    print('           P values (FDR):')
+    print(np.round(pvals_adj, 3))
+    
+    return anova_res, pvals, pvals_adj
+
+
+def plot_bars(data, ax=[], colors=[], mfc=[], labels=[], max_jit = 0, ms=30):
+    
+    r"""
+    Plot barplot + connected points to summarize within-subject differences 
+    between conditions.
+    
+    data is an array subjects x conditions 
+
+    """
+    
+    nmice = data.shape[0]
+    ngroups = data.shape[1]
+    xjit = (np.random.rand(nmice, ngroups) - 0.5) *max_jit
+
+    grav = np.reshape(data, [np.size(data),],'F')
+    group = np.arange(0, ngroups)
+    group = np.repeat(group, nmice)
+    group = group + np.reshape(xjit, [np.size(xjit),], 'F')
+    
+    if mfc==[]:
+        mfc=['gray']*ngroups
+    if ax==[]:
+        fig, ax = plt.subplots(figsize = (1.8, 2.7), dpi = 300)
+        
+    ind_color = np.repeat(colors, nmice)
+    ind_mfc = np.repeat(mfc, nmice)
+        
+    tmp_av = np.nanmean(data, 0)
+    tmp_se = np.nanstd(data, 0) / np.sqrt(nmice)
+
+    for m in range(nmice):
+        line_to_plot = data[m,:]
+        x_to_plot = np.arange(0, ngroups) + xjit[m,:]
+        nan_idx = np.where(np.isnan(line_to_plot) == True)[0]
+        if len(nan_idx)==1 and nan_idx[0] < max(group):
+            line_to_plot[nan_idx] = np.mean([line_to_plot[nan_idx-1], line_to_plot[nan_idx+1]])
+        ax.plot(x_to_plot, line_to_plot, color = 'gray', zorder=0, linewidth = 0.6)
+        
+    ax.scatter(group, grav, marker = 'o', color = ind_color, facecolors = ind_mfc, s = ms, zorder=1, alpha = 0.5)
+    ax.bar(np.arange(ngroups), tmp_av, yerr = tmp_se, fill=False, edgecolor = 'k', lw = 1)
+        
+      
+    if labels != []:
+        ax.set_xticks(np.arange(ngroups))
+        ax.set_xticklabels(labels, rotation = 0, fontsize=8)
+
+    plt.tight_layout()
+
+    return ax
+
+
+def add_significance(ax, pairs, pvals, thr=0.05, line_dist=0.05, ast_dist=0.05):
+    r"""
+    Add horizontal bars between significantly different conditions
+    to an existing plot where different groups are plotted on x axis
+    """
+    is_sig = pvals < thr
+    
+    line_h = ax.get_ylim()[1] - 0.05*ax.get_ylim()[1] # how high to plot annotation lines
+    for ii in range(pairs.shape[1]):
+        if is_sig[ii]:
+            ax.plot([pairs[0,ii], pairs[1,ii]], [line_h, line_h], lw=1, color = 'k')            
+            sig_label = gen_ast(pvals[ii])
+            ax.annotate(sig_label, [np.mean([pairs[0,ii], pairs[1,ii]]), line_h+ast_dist], 
+                        size = 15, ha = 'center')
+    
+            line_h = line_h - line_dist
+            
+    return ax
+
+
+def plot_tseries(data, tvec = [], ax=[], error=[], colors=[], line_styles=[],
+                 line_alpha=1, error_alpha = 0.2, lw=1, labels=[]):
+    
+    r"""
+    Create a plot with multiple time series (e.g., avergae traces) plotted on
+    top of each other, optionally with errorbar.
+    Input data: time points in rows, different series in columns.
+    """
+    
+    nseries = data.shape[1]
+    npoints = data.shape[0]
+    
+    if ax==[]:
+        fig, ax = plt.subplots(figsize = (3, 2), dpi = 600)
+    if tvec==[]:
+        tvec = np.arange(npoints)
+    if colors==[]:
+        colors = ['gray']*nseries
+    if line_styles==[]:
+        line_styles = ['-']*nseries
+    
+    for s in range(nseries):    
+        ax.plot(tvec, data[:,s], c=colors[s], ls=line_styles[s], lw=lw,
+                alpha=line_alpha)
+        
+        if len(error)>0:
+            ax.fill_between(tvec, data[:,s]+error[:,s], data[:,s]-error[:,s], 
+            color=colors[s], alpha=error_alpha, lw=0.01)
+            
+    if labels!=[]:
+        ax.legend(labels = labels, loc='upperright')
+            
+    plt.tight_layout()
+
+    return ax
+
+
+def add_opto(ax):
+    r"""
+    Add patches ilustrating the opto stimulation
+    """
+
+    # For blue light
+    cmax = 150
+    ax.add_patch(Rectangle((0, -0.4), 3, 0.15, color = plt.cm.Blues(cmax)))
+    ax.imshow([[cmax, 10], [cmax, 10]], cmap = plt.cm.Blues, interpolation = 'bicubic',\
+               extent=[3, 4, -0.4, -0.235], vmin = 0, vmax = 255, aspect='auto')
+    # and for red   
+    ax.add_patch(Rectangle((0.7, -0.218), 0.5, 0.15, color = 'tomato')) 
+
+    return ax
+
+
+def plot_curves(data, error=[], ax=[], maxpoints=[], colors=[], line_styles=[], 
+                mfc=[], labels=[], jit=0, ms=4):
+    r"""
+    PLot a series of lines with optional error bars.
+    Useful for plotting habituation curves.
+    Input data: array of size time points x n series (groups, conditions etc.)
+    """
+    
+    npoints = data.shape[0]
+    nseries = data.shape[1]
+    jits = np.linspace(-jit, jit, nseries)
+    
+    if maxpoints==[]:    
+        maxpoints=npoints
+    tvec = np.arange(1, maxpoints+1)
+
+    if colors==[]:
+        colors = ['gray']*nseries
+    if line_styles==[]:
+        line_styles = ['-']*nseries
+    if mfc==[]:
+        mfc=['gray']*nseries
+    if len(error)==0:
+        error==np.zeros([npoints, nseries])
+    if labels==[]:
+        labels=[[] for i in range(nseries)]
+        
+    if ax==[]:
+        fig, ax = plt.subplots(figsize = (3, 2), dpi = 600)
+        
+    for s in range(nseries):    
+        ax.errorbar(tvec+jits[s], data[:maxpoints,s], error[:maxpoints,s], 
+        color=colors[s], ls=line_styles[s], lw=1, fmt = 'o', ms=ms, mfc=mfc[s],
+        label = labels[s])
+        
+        
+    plt.tight_layout()
+        
+    return ax
