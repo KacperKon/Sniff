@@ -496,13 +496,19 @@ def rm_anova(data, pairs):
     print(anova_res) 
     
     pvals = []
+    tvals = []
     for ii in range(pairs.shape[1]):    
         stat, p = stats.ttest_rel(grav[group==pairs[0, ii]], grav[group==pairs[1, ii]],
                                   nan_policy = 'omit')
         pvals.append(p)
+        tvals.append(stat)
     pvals = np.array(pvals)
+    tvals = np.array(tvals)
     
     pvals_adj = fdr(pvals)[1]
+    
+    print('       T values:')
+    print(np.round(tvals, 3))
     
     print('       P values (uncorrected):')
     print(np.round(pvals, 3))
