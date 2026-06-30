@@ -291,6 +291,130 @@ def av_by_occur(sniffs, trial_means, tr_cat):
 
     return av_byoc, n_byoc, sem_byoc
 
+def reorder_trials(sniffs, chronological=True):
+    """
+    Reorder trial_* variables between MATLAB order and chronological order.
+
+    MATLAB preprocessing sorts trial variables by odor identity. This function
+    reorders them to match chronological trial order (same as ml_inh_onsets and
+    ephys arrays), or reverses back to MATLAB order when chronological=False.
+
+    Version for sniff_tools2: supports sessions with unequal trial counts and
+    handles trial_* fields stored as either numpy arrays or Python lists.
+
+    Call once after loading sniffs:
+        sniffs = st.reorder_trials(sniffs)
+
+    Added/updated fields per session:
+        trial_idx_orig  : 0-based copy of the original MATLAB trial_idx (kept across calls)
+        is_chronologic  : bool — current state of trial_* variables
+    After sorting, trial_idx becomes np.arange(ntrials) (0-based, usable directly as index).
+
+    Parameters
+    ----------
+    sniffs        : list of session dicts (output of import_sniff_mat or similar)
+    chronological : True  — reorder to chronological order (default)
+                    False — revert to original MATLAB order
+
+    Returns
+    -------
+    sniffs : same list, modified in place (also returned for chaining)
+    """
+    for s in range(len(sniffs)):
+        already = sniffs[s].get('is_chronologic', False)
+        if chronological == already:
+            continue  # already in desired state, nothing to do
+
+        # On the very first sort, save the original trial_idx as 0-based
+        if 'trial_idx_orig' not in sniffs[s]:
+            sniffs[s]['trial_idx_orig'] = sniffs[s]['trial_idx'].astype(int) - 1
+
+        trial_idx_orig = sniffs[s]['trial_idx_orig']
+        ntrials        = len(trial_idx_orig)
+
+        if chronological:
+            perm = np.argsort(trial_idx_orig)
+        else:
+            perm = np.argsort(np.argsort(trial_idx_orig))
+
+        trial_keys = [k for k in sniffs[s]
+                      if k.startswith('trial_') and k != 'trial_idx_orig']
+        for key in trial_keys:
+            arr = sniffs[s][key]
+            if not hasattr(arr, '__len__') or len(arr) != ntrials:
+                continue
+            if isinstance(arr, np.ndarray):
+                sniffs[s][key] = arr[perm]
+            elif isinstance(arr, list):
+                sniffs[s][key] = [arr[i] for i in perm]
+
+        sniffs[s]['trial_idx']      = np.arange(ntrials) if chronological else trial_idx_orig + 1
+        sniffs[s]['is_chronologic'] = chronological
+
+    return sniffs
+
+def select_tr(sniff_ses, shared=None, cats=None):
+    """
+    Build a (ntrials, ncats) boolean mask from trial-field conditions.
+
+    Parameters
+    ----------
+    sniff_ses : dict
+        Single session from sniffs, i.e. sniffs[s].
+    shared : dict, optional
+        Conditions applied to every column. Keys are trial field names
+        without the 'trial_' prefix. Value encoding:
+            scalar      field == value
+            list        field in values   (np.isin)
+            (a, b)      a <= field <= b
+    cats : list of dict, optional
+        Each dict defines one category column, same encoding as shared.
+        Default: [{}]  (one column, shared conditions only).
+
+    Returns
+    -------
+    mask : ndarray, shape (ntrials, ncats), dtype bool
+
+    Example
+    -------
+    mask = st.select_tr(sniffs[s],
+        shared = {'occur': (cfg.MIN_PRES, cfg.MAX_PRES), 'blank': 0},
+        cats   = [
+            {'familiarity': 1, 'opto': 0},
+            {'novelty':     1, 'opto': 0},
+            {'novelty':     1, 'opto': [-1, 1]},
+        ])
+    # mask shape: (ntrials, 3)
+    """
+    def _eval(arr, val):
+        if isinstance(val, tuple):
+            return (arr >= val[0]) & (arr <= val[1])
+        if isinstance(val, list):
+            return np.isin(arr, val)
+        return arr == val
+
+    ntrials = sniff_ses['trial_idx'].size
+    if cats is None:
+        cats = [{}]
+    mask = np.ones((ntrials, len(cats)), dtype=bool)
+
+    if shared:
+        for field, val in shared.items():
+            mask &= _eval(sniff_ses['trial_' + field], val)[:, np.newaxis]
+
+    for ci, cat_conds in enumerate(cats):
+        for field, val in cat_conds.items():
+            mask[:, ci] &= _eval(sniff_ses['trial_' + field], val)
+
+    return mask
+
+def select_tr_multi(sniffs, shared=None, cats=None):
+    """
+    Apply select_tr to every session in sniffs.
+
+    Returns a list of (ntrials, ncats) bool arrays, one per session.
+    """
+    return [select_tr(ses, shared=shared, cats=cats) for ses in sniffs]
 
 def gen_ast(pval):
     """
