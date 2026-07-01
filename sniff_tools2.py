@@ -7,6 +7,7 @@ Functions for analyzing breathing rate and pupil diameter from head-fixed animal
 The current version, v2, is using lists of 2-dim arrays instead of 3-dim arrays,
 which allows to analyze datasets with animals reveiving unequal number of trials.
 """
+import os
 import re
 import pandas as pd
 import glob
@@ -819,5 +820,10 @@ def plot_curves(data, error=[], ax=[], maxpoints=[], colors=[], line_styles=[],
         
         
     plt.tight_layout()
-        
+
     return ax
+
+
+def ensure_dir(path):
+    os.makedirs(path, exist_ok=True)
+    return path

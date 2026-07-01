@@ -5,6 +5,7 @@ Created on Thu Nov 18 20:36:45 2021
 
 Functions for analyzing breathing rate and pupil diameter from head-fixed animals.
 """
+import os
 import re
 import pandas as pd
 import glob
@@ -798,5 +799,10 @@ def plot_curves(data, error=[], ax=[], maxpoints=[], colors=[], line_styles=[],
         
         
     plt.tight_layout()
-        
+
     return ax
+
+
+def ensure_dir(path):
+    os.makedirs(path, exist_ok=True)
+    return path
