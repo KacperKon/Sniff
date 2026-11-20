@@ -744,7 +744,7 @@ def plot_tseries(data, tvec = [], ax=[], error=[], colors=[], line_styles=[],
     
     if ax==[]:
         fig, ax = plt.subplots(figsize = (3, 2), dpi = 600)
-    if tvec==[]:
+    if len(tvec) == 0:
         tvec = np.arange(npoints)
     if colors==[]:
         colors = ['gray']*nseries
